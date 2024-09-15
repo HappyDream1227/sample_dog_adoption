@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, Suspense, useDebugValue, useDeferredValue } from "react"
-import axios, { all } from "axios";
+import { useEffect, useRef, useState } from "react"
+import axios from "axios";
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
 import Select, { SelectChangeEvent } from '@mui/material/Select';
 
+import { InputText } from "primereact/inputtext";
+import { TabView, TabPanel } from 'primereact/tabview';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 
@@ -34,17 +36,18 @@ interface Coordinates {
 export default function Home() {
 
   const [dogs, setDogs] = useState<Dog[]>([])
+  const [showdogs, setShowDogs] = useState<Dog[]>([])
   const [selectedDogs, setSelectedDogs] = useState<Dog[]>([])
   const [adoptedDog, setAdoptedDog] = useState<Dog | undefined>(undefined)
   const [rowClick, setRowClick] = useState<boolean>(true)
 
+  const [search, setSearch] = useState<string>('')
   const [breeds, setBreeds] = useState<string[]>([])
   const [curBreed, setCurBreed] = useState<string>('')
-  const deferredQuery = useDeferredValue(curBreed)
 
   const handleCurBreed = (event: SelectChangeEvent) => {
     setCurBreed(event.target.value);
-    setSelectedDogs([])
+    // setSelectedDogs([])
     console.log(curBreed)
   };
 
@@ -53,59 +56,76 @@ export default function Home() {
 
   //initial loading
   useEffect(() => {
-    // request for breeds
-    axios.get('https://frontend-take-home-service.fetch.com/dogs/breeds', {
-      withCredentials: true
-    })
-    .then(response => {
-      // Handle successful login
-      // console.log(response.data);
-      setBreeds(response.data)
-    })
-    .catch(error => {
-      alert('---------  Request Failed! ----------');
-      return;
-    });
-
-
-    // request for dogIDs
-    axios.get('https://frontend-take-home-service.fetch.com/dogs/search?sort=breed:asc', {
-      withCredentials: true
-    })
-    .then(response => {
-      const tempIds: string[] = response.data.resultIds; // Get result IDs from response
-      // setNext(response.data.next);
-
-      // request for dog data with dogIDs
-      // Now that we have tempIds, we can make the POST request
-      return axios.post('https://frontend-take-home-service.fetch.com/dogs', tempIds, {
+    const fetchData = async () => {
+      let tempBreeds: string[] = []
+      axios.get('https://frontend-take-home-service.fetch.com/dogs/breeds', {
         withCredentials: true
+      })
+      .then(response => {
+          // Handle successful response
+          tempBreeds = response.data;
+          setBreeds(tempBreeds);
+      
+          const breedsQuery = tempBreeds.slice(0,10).map(breed => `breeds[]=${encodeURIComponent(breed)}`).join('&');
+          console.log('1234 : ', breedsQuery)
+          // Now that tempBreeds is populated, make the second request
+          return axios.get(`https://frontend-take-home-service.fetch.com/dogs/search?${breedsQuery}&size=10000&sort=breed:asc`, {
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Content-Type': 'application/json',
+            },
+            withCredentials: true
+        });
+      })
+      .then(response => {
+          const tempIds: string[] = response.data.resultIds; // Get result IDs from response
+          console.log("Here : ", tempIds);
+      
+          const fetchDogsByChunks = async (ids:string[]) => {
+          const chunkSize = 100;
+          const chunks = chunkArray(ids, chunkSize); // Split IDs into chunks
+          let tempDogs: Dog[] = [];
+  
+          try {
+            for (const chunk of chunks) {
+              const dogResponse = await axios.post('https://frontend-take-home-service.fetch.com/dogs', chunk, {
+                withCredentials: true
+              });
+              tempDogs = tempDogs.concat(dogResponse.data); // Assuming response.data contains the dog objects
+            }
+  
+            setDogs(tempDogs); // Set the fetched dogs in state
+            setShowDogs(tempDogs)
+            allDogs.current = tempDogs
+          } catch (error) {
+            console.error('Error fetching dogs:', error);
+            return;
+          }
+        };
+  
+        // Fetch dogs using the tempIds
+        fetchDogsByChunks(tempIds);
+      })
+      .catch(error => {
+          alert('---------  Request Failed! ----------');
+          console.error(error);
       });
-    })
-    .then(response => {
-      // console.log("Dogs : ", response.data);
-      // console.log("Dogs Typs: ", Array.isArray(response.data));
-      setDogs(response.data);
-    })
-    .catch(error => {
-      alert('---------  Request Failed! ----------');
-      return;
-    });
-
-
-    allDogs.current = dogs
+    };
+  
+    fetchData();
   }, [])
 
 
   // when the breed is changed
   useEffect(() => {
     let url: string = ""
-    if(deferredQuery === "All") {
+    if(curBreed === "All") {
+      console.log('current ; ' , allDogs)
       setDogs(allDogs.current)
       return;
     }
     else
-      url = `https://frontend-take-home-service.fetch.com/dogs/search?breeds[]=${deferredQuery}&size=10000`;
+      url = `https://frontend-take-home-service.fetch.com/dogs/search?breeds[]=${curBreed}&size=10000`;
 
     
     axios.get(url, {
@@ -121,19 +141,20 @@ export default function Home() {
       const fetchDogsByChunks = async (ids:string[]) => {
         const chunkSize = 100;
         const chunks = chunkArray(ids, chunkSize); // Split IDs into chunks
-        let allDogs: Dog[] = [];
+        let tempDogs: Dog[] = [];
 
         try {
           for (const chunk of chunks) {
             const dogResponse = await axios.post('https://frontend-take-home-service.fetch.com/dogs', chunk, {
               withCredentials: true
             });
-            allDogs = allDogs.concat(dogResponse.data); // Assuming response.data contains the dog objects
+            tempDogs = tempDogs.concat(dogResponse.data); // Assuming response.data contains the dog objects
           }
 
           // console.log('Total Dogs Fetched:', allDogs.length);
           // console.log('Dogs:', allDogs);
-          setDogs(allDogs); // Set the fetched dogs in state
+          setDogs(tempDogs); // Set the fetched dogs in state
+          setShowDogs(tempDogs)
         } catch (error) {
           console.error('Error fetching dogs:', error);
           return;
@@ -144,14 +165,15 @@ export default function Home() {
       fetchDogsByChunks(tempIds);
     })
     .then(response => {
-      console.log('successfully received')
+      // console.log('successfully received')
     })
     .catch(error => {
       alert('---------  Request Failed! ----------');
       return;
     });
 
-  }, [deferredQuery])
+  }, [curBreed])
+
 
   const chunkArray = (array:string[], chunkSize:number) => {
     const result = [];
@@ -187,16 +209,28 @@ export default function Home() {
 
   }
 
+  const handleClearSelection = () => {
+    setSelectedDogs([])
+  }
   const handleReset = () => {
     setAdoptedDog(undefined)
     setSelectedDogs([])
+  }
+
+  const handleSearch = (v: string) => {
+    setSearch(v)
+    let tempDogs: Dog[] = [];
+    tempDogs = dogs.filter(dog => dog.name.toLowerCase().includes(v.toLowerCase()))
+    setShowDogs(tempDogs)
   }
  
   return (
     <>
       <div className="flex items-center m-10 gap-5 justify-between">
         <p className="text-[30px]">Welcome to Dog Home. Choose your best one !</p>
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-5 justify-center">
+          <InputText value={search} onChange={(e) => handleSearch(e.target.value)} placeholder="search..." className="border-[1px] border-blue-500 h-[40px] w-[200px] pl-3" />
+
           <FormControl variant="standard" sx={{ m: 1, minWidth: 220 }} className="w-[200px]">
             <InputLabel id="demo-simple-select-standard-label">Breeds</InputLabel>
             <Select
@@ -215,6 +249,7 @@ export default function Home() {
           </FormControl>
 
           <button onClick={handleAdoption} className="rounded-md px-5 py-2 bg-[#1457d2] text-white hover:bg-slate-200 hover:text-blue-600 duration-300 w-[150px]">Adopt</button>
+          <button onClick={handleClearSelection} className="rounded-md px-5 py-2 bg-[#1457d2] text-white hover:bg-slate-200 hover:text-blue-600 duration-300 w-[150px]">Clear Selection</button>
         </div>
       </div>
       
@@ -233,25 +268,45 @@ export default function Home() {
         </div>
       </div>
       :
-      <Suspense fallback={<h2>Loading...</h2>}>
-        <div className={`card `}>
-          <DataTable value={dogs} paginator rows={5} rowsPerPageOptions={[5, 10, 25, 50]} selectionMode={rowClick ? null : 'multiple'} selection={selectedDogs!}
+      <div className={`card `}>
+        <TabView className="mx-10">
+          <TabPanel header="All" >
+            <DataTable value={showdogs} paginator rows={5} rowsPerPageOptions={[5, 10, 25, 50]} selectionMode={rowClick ? null : 'multiple'} selection={selectedDogs!}
             onSelectionChange={(e:any) => setSelectedDogs(e.value)} dataKey="id" tableStyle={{ minWidth: '50rem' }}>
-            <Column selectionMode="multiple" headerStyle={{ width: '3rem' }}></Column>
-            <Column field="name" header="Name" sortable ></Column>
-            {/* <Column field="img" header="Image" sortable ></Column> */}
-            <Column 
-              field="img" 
-              header="Image" 
-              sortable 
-              body={(rowData) => <img src={rowData.img} alt={rowData.name} style={{ width: '50px', height: '50px',borderRadius : '5px' }} />} 
-            ></Column>
-            <Column field="age" header="Age" sortable ></Column>
-            <Column field="breed" header="Breed" sortable ></Column>
-            <Column field="zip_code" header="ZipCode" sortable ></Column>
-          </DataTable>
-        </div>
-      </Suspense>
+              <Column selectionMode="multiple" headerStyle={{ width: '3rem' }}></Column>
+              <Column field="name" header="Name" sortable ></Column>
+              {/* <Column field="img" header="Image" sortable ></Column> */}
+              <Column 
+                field="img" 
+                header="Image" 
+                sortable 
+                body={(rowData) => <img src={rowData.img} alt={rowData.name} style={{ width: '50px', height: '50px',borderRadius : '5px' }} />} 
+              ></Column>
+              <Column field="age" header="Age" sortable ></Column>
+              <Column field="breed" header="Breed" sortable ></Column>
+              <Column field="zip_code" header="ZipCode" sortable ></Column>
+            </DataTable>
+          </TabPanel>
+          <TabPanel header="Selected">
+          <DataTable value={selectedDogs} paginator rows={5} rowsPerPageOptions={[5, 10, 25, 50]} 
+             dataKey="id" tableStyle={{ minWidth: '50rem' }}>
+              <Column field="name" header="Name" sortable ></Column>
+              {/* <Column field="img" header="Image" sortable ></Column> */}
+              <Column 
+                field="img" 
+                header="Image" 
+                sortable 
+                body={(rowData) => <img src={rowData.img} alt={rowData.name} style={{ width: '50px', height: '50px',borderRadius : '5px' }} />} 
+              ></Column>
+              <Column field="age" header="Age" sortable ></Column>
+              <Column field="breed" header="Breed" sortable ></Column>
+              <Column field="zip_code" header="ZipCode" sortable ></Column>
+            </DataTable>
+          </TabPanel>
+          
+      </TabView>
+        
+      </div>
 
       }
       
