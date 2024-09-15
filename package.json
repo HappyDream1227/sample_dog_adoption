@@ -2,7 +2,6 @@
   "name": "20_homework",
   "version": "0.1.0",
   "private": true,
-  "proxy": "https://frontend-take-home-service.fetch.com",
   "dependencies": {
     "@emotion/react": "^11.13.3",
     "@emotion/styled": "^11.13.0",
